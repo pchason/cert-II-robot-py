@@ -4,6 +4,7 @@ from RPA.HTTP import HTTP
 from RPA.Tables import Tables
 from RPA.PDF import PDF
 from RPA.Archive import Archive
+
 @task
 def order_robots_from_RobotSpareBin():
     """
@@ -14,16 +15,19 @@ def order_robots_from_RobotSpareBin():
     Creates ZIP archive of the receipts and the images.
     """
     browser.configure(
-        slowmo=100,
+        slowmo=1000,
     )
     open_robot_order_website()
     close_annoying_modal()
     submit_orders()
+    archive_receipts()
+
+def order_url():
+    return "https://robotsparebinindustries.com/#/robot-order"
 
 def open_robot_order_website():
     """Navigates to the given URL."""
-    browser.goto("https://robotsparebinindustries.com/#/robot-order")
-    # orders = get_orders() 1698078155622
+    browser.goto(order_url())
 
 def get_orders():
     """Downloads csv file from the given URL."""
@@ -37,30 +41,43 @@ def get_orders():
 
 def submit_single_order(order):
       """Submit an order on the website."""
-      try:
-        page = browser.page()
-        page.select_option("#head", order["Head"])
-        page.click("#id-body-" + order["Body"])
-        page.get_by_placeholder("Enter the part number for the legs").fill(order["Legs"])
-        page.fill("#address", order["Address"])
-        page.click("button:text('Preview')")
-        page.click("button:text('Order')")
-        embed_screenshot_to_receipt(screenshot_robot(order["Order number"]), store_receipt_as_pdf(order["Order number"]))
-      except Exception as e:
-         print(f"Attempt for order {order['Order number']} failed with error: {str(e)}")
-         return False
-      return True
+      page = browser.page()
+      page.select_option("#head", order["Head"])
+      page.click("#id-body-" + order["Body"])
+      page.get_by_placeholder("Enter the part number for the legs").fill(order["Legs"])
+      page.fill("#address", order["Address"])
+      page.click("button:text('Preview')")
+      page.click("button:text('Order')")
+      while page.get_by_role("alert").count() > 0:
+         page.click("button:text('Order')")
+    #   while True:
+    #     browser.click_button('css:button.your-button-class')
+    #     if not page.alert_is_present():
+    #         break
+      # page.get_by_text("Receipt").wait_for()
+      # Hint: in debug mode you can actually use browser.page().pause() in the debug console (when paused in a breakpoint)
+      embed_screenshot_to_receipt(screenshot_robot(order["Order number"]), store_receipt_as_pdf(order["Order number"]))
+      page.click("button:text('Order another robot')")
+      close_annoying_modal()
 
 def close_annoying_modal():
-   browser.page().click("button:text('OK')")
+   page = browser.page()
+   # page.wait_for_selector(page.get_by_role("dialog"))
+   # page.get_by_role("dialog").wait_for()
+   # while page.get_by_role("dialog") < 1:
+   while page.get_by_role("dialog").count() > 0:
+    page.click("button:text('OK')")
    
 def submit_orders():
     """Get the orders from the csv."""
     orders = get_orders()
+    page = browser.page()
     for order in orders:
-      if not submit_single_order(order):
-         submit_single_order(order)
-
+          submit_single_order(order)
+          # page.get_by_text("Order another robot").wait_for()
+        #   page.click("button:text('Order another robot')")
+        #   close_annoying_modal()
+            
 def store_receipt_as_pdf(order_number):
     """Save each order HTML receipt as a PDF file."""
     filepath = "output/receipts/pdf/robot-order-" + order_number + ".pdf"
@@ -81,13 +98,15 @@ def screenshot_robot(order_number):
 
 def embed_screenshot_to_receipt(screenshot, pdf_file):
     """Embed the screenshot in the receipt file."""
-    p = PDF()
-    p.add_files_to_pdf(
-       files=[screenshot],
-       target_document=pdf_file,
-       append=True
-    )
+    try:
+      p = PDF()
+      p.add_files_to_pdf(
+        files=[screenshot],
+        target_document=pdf_file,
+        append=True
+      )
+    except Exception as e:
+        print(f"Embedding PDF for file {pdf_file} failed with error: {str(e)}")
 
 def archive_receipts():
-   Archive().archive_folder_with_zip('output/receipts', 'receipts.zip')
-
+   Archive().archive_folder_with_zip('output/receipts', 'output/receipts.zip', recursive=True)
