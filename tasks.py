@@ -4,6 +4,7 @@ from RPA.HTTP import HTTP
 from RPA.Tables import Tables
 from RPA.PDF import PDF
 from RPA.Archive import Archive
+import time
 
 @task
 def order_robots_from_RobotSpareBin():
@@ -15,7 +16,7 @@ def order_robots_from_RobotSpareBin():
     Creates ZIP archive of the receipts and the images.
     """
     browser.configure(
-        slowmo=1000,
+        slowmo=100,
     )
     open_robot_order_website()
     close_annoying_modal()
@@ -39,7 +40,7 @@ def get_orders():
     return orders
 
 
-def submit_single_order(order):
+def fill_the_form(order):
       """Submit an order on the website."""
       page = browser.page()
       page.select_option("#head", order["Head"])
@@ -48,35 +49,49 @@ def submit_single_order(order):
       page.fill("#address", order["Address"])
       page.click("button:text('Preview')")
       page.click("button:text('Order')")
-      while page.get_by_role("alert").count() > 0:
-         page.click("button:text('Order')")
-    #   while True:
-    #     browser.click_button('css:button.your-button-class')
-    #     if not page.alert_is_present():
-    #         break
+      try:
+        while page.get_by_role("alert").count() > 0:
+          page.click("button:text('Order')")
+          if page.get_by_role("alert").count() < 1:
+              break
+      except Exception as e:
+         print(f"Clicking ORDER button failed with error: {str(e)}")
+      else:
+        screenshot = screenshot_robot(order["Order number"])
+        receipt = store_receipt_as_pdf(order["Order number"])
+        embed_screenshot_to_receipt(screenshot, receipt)
+         
+
       # page.get_by_text("Receipt").wait_for()
       # Hint: in debug mode you can actually use browser.page().pause() in the debug console (when paused in a breakpoint)
-      embed_screenshot_to_receipt(screenshot_robot(order["Order number"]), store_receipt_as_pdf(order["Order number"]))
-      page.click("button:text('Order another robot')")
-      close_annoying_modal()
+      # page.pause()
+      # time.sleep(5)
+      page.get_by_role("button", name="Order another robot").click(timeout=10000) # click("button:text('Order another robot')")
+      
 
 def close_annoying_modal():
    page = browser.page()
    # page.wait_for_selector(page.get_by_role("dialog"))
    # page.get_by_role("dialog").wait_for()
    # while page.get_by_role("dialog") < 1:
-   while page.get_by_role("dialog").count() > 0:
-    page.click("button:text('OK')")
+   #while page.get_by_role("dialog").locator("div").nth(2).count() > 0:
+   page.click("button:text('OK')")
+#    while True:
+#       page.get_by_role("button", name="OK").click()
+#       if not page.get_by_role("dialog").locator("div").nth(2).count() > 0:
+#         break
+
+   # page.get_by_role("button", name="OK").click()
    
 def submit_orders():
     """Get the orders from the csv."""
     orders = get_orders()
     page = browser.page()
     for order in orders:
-          submit_single_order(order)
-          # page.get_by_text("Order another robot").wait_for()
-        #   page.click("button:text('Order another robot')")
-        #   close_annoying_modal()
+          fill_the_form(order)
+          # page.pause()
+          close_annoying_modal()
+          # page.get_by_role("button", name="OK").click()
             
 def store_receipt_as_pdf(order_number):
     """Save each order HTML receipt as a PDF file."""
